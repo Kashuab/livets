@@ -1,0 +1,21 @@
+{
+  "name": "lively",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "demo-server-dev": "ts-node --transpileOnly --project demo/server/tsconfig.json demo/server/index.ts"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.2",
+    "socket.io-client": "^4.7.2",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/uuid": "^9.0.7",
+    "tsconfig-paths": "^4.2.0"
+  }
+}
