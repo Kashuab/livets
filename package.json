@@ -7,6 +7,7 @@
     "demo-server-dev": "ts-node --transpileOnly --project demo/server/tsconfig.json demo/server/index.ts"
   },
   "dependencies": {
+    "react": "^18.2.0",
     "socket.io": "^4.7.2",
     "socket.io-client": "^4.7.2",
     "ts-node": "^10.9.2",
@@ -15,6 +16,7 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/react": "^18.2.45",
     "@types/uuid": "^9.0.7",
     "tsconfig-paths": "^4.2.0"
   }

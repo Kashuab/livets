@@ -4,12 +4,18 @@ import {createServer} from "../../lib/createServer";
 
 type StateTest = {
   username: string;
+  nested: {
+    test: number;
+  }
 }
 
 const lobbyStore = createStore((state: StateTest) => ({
   setUsername(username: string) {
     state.username = username;
   },
+  setNestedTest(test: number) {
+    state.nested.test = test;
+  }
 }));
 
 const lobby = createRoom({
@@ -17,7 +23,7 @@ const lobby = createRoom({
   getInitialState: (id: string) => {
     console.log('Find initial state for lobby', id);
 
-    return { username: 'initial' }
+    return { username: 'initial', nested: { test: 0 } }
   },
   persist: (id, state) => {
     console.log('Stored', id, state);
