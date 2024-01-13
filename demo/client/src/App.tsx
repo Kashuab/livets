@@ -1,7 +1,7 @@
 import './App.css';
-import {createReactClient, UnwrapRoomState} from "../../../lib/createClient.ts";
+import {createReactClient} from "../../../lib/createClient.ts";
 import type { Server } from "../../server";
-import {memo, useEffect, useState} from "react";
+import {memo, useState} from "react";
 
 const client = createReactClient<Server>('ws://localhost:3000');
 

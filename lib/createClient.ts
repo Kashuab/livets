@@ -2,6 +2,8 @@ import { io, Socket } from 'socket.io-client';
 import type { Room } from "./createRoom";
 import { v4 } from 'uuid';
 import {useEffect, useState, useRef, useMemo} from "react";
+import {createTrackedObjectProxy} from "./util/createTrackedObjectProxy";
+import {trackedObjectChanged} from "./util/trackedObjectChanged";
 
 type ClientStore<
   R extends Room<any, any>,
@@ -90,6 +92,7 @@ export function createReactClient<
           const trackedProperties = useRef<string[]>([]);
           const state = useRef<Record<string, any>>({});
           const [, setR] = useState(0);
+          const forceUpdate = () => setR(c => c + 1);
 
           useEffect(() => {
             return store.subscribe(newState => {
@@ -98,7 +101,7 @@ export function createReactClient<
 
               state.current = newState;
 
-              if (rerender) setR(c => c + 1);
+              if (rerender) forceUpdate();
             });
           }, []);
 
@@ -224,42 +227,4 @@ function cleanupTrackedProperties(props: string[]) {
   });
 
   return finalProps;
-}
-
-function createTrackedObjectProxy(obj: object, cb: (prop: string) => void, parentKey?: string) {
-  return new Proxy(obj, {
-    set(_target: object, _p: string | symbol, _newValue: any, _receiver: any): boolean {
-      throw new Error('[Lively Client] You cannot mutate the state of a given store.');
-    },
-    get(target: object, p: string): any {
-      const value = target[p as keyof object] as unknown;
-
-      const trackedProperty = parentKey ? `${parentKey}.${p}` : p;
-      cb(trackedProperty);
-
-      if (value && typeof value === 'object') {
-        return createTrackedObjectProxy(value, cb, p);
-      }
-
-      return value;
-    }
-  });
-}
-
-function trackedObjectChanged(original: Record<string, any>, updated: Record<string, any>, tracked: string[]) {
-  for (const p of tracked) {
-    const paths = p.split('.');
-
-    let oldValue = original;
-    let newValue = updated;
-
-    paths.forEach(path => {
-      if (oldValue) oldValue = oldValue[path];
-      if (newValue) newValue = newValue[path];
-    });
-
-    if (oldValue !== newValue) return true;
-  }
-
-  return false;
 }

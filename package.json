@@ -2,9 +2,13 @@
   "name": "lively",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
   "scripts": {
-    "demo-server-dev": "ts-node --transpileOnly --project demo/server/tsconfig.json demo/server/index.ts"
+    "demo-server-dev": "ts-node --transpileOnly --project demo/server/tsconfig.json demo/server/index.ts",
+    "test": "vitest"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -18,6 +22,7 @@
   "devDependencies": {
     "@types/react": "^18.2.45",
     "@types/uuid": "^9.0.7",
-    "tsconfig-paths": "^4.2.0"
+    "tsconfig-paths": "^4.2.0",
+    "vitest": "^1.2.0"
   }
 }
