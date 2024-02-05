@@ -1,6 +1,8 @@
 import {createStore} from "../../lib/createStore";
 import {createRoom} from "../../lib/createRoom";
 import {createServer} from "../../lib/createServer";
+import {devtools} from "~lively/lib/middleware/devtools";
+import {ThreadError} from "~lively/demo/server/errors";
 
 type StateTest = {
   username: string;
@@ -9,8 +11,12 @@ type StateTest = {
   }
 }
 
-const lobbyStore = createStore((state: StateTest) => ({
+export const lobbyStore = createStore((state: StateTest, ctx) => ({
   setUsername(username: string) {
+    if (username === 'asdf') {
+      ctx.raise(ThreadError.BadUsername, 'username cannot be asdf');
+    }
+
     state.username = username;
   },
   setNestedTest(test: number) {
@@ -33,7 +39,15 @@ const lobby = createRoom({
 const server = createServer({
   port: 3000,
   wss: false,
-  rooms: { lobby }
+  rooms: { lobby },
+  middleware: [
+    devtools,
+    {
+      afterActionFailed: data => {
+        console.error('Action failed', data)
+      }
+    }
+  ]
 });
 
 export type Server = typeof server;

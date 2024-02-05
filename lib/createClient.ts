@@ -1,32 +1,38 @@
 import { io, Socket } from 'socket.io-client';
 import type { Room } from "./createRoom";
 import { v4 } from 'uuid';
-import {useEffect, useState, useRef, useMemo} from "react";
-import {createTrackedObjectProxy} from "./util/createTrackedObjectProxy";
-import {trackedObjectChanged} from "./util/trackedObjectChanged";
+import {ActionFailedPayload} from "./Orchestrator";
+import {ActionRaisedError, ActionRaisedErrorInit} from "./ActionRaisedError";
 
-type ClientStore<
+export type ClientStore<
   R extends Room<any, any>,
   State extends Record<string, any> = UnwrapRoomState<R>,
 > = {
+  disconnect: () => void;
   subscribe: (cb: (state: State) => void) => () => void;
   actions: UnwrapRoomActions<R>;
   getState: () => Promise<State>;
+  hasSubscribers: boolean;
 }
 
 export type UnwrapRoomState<R extends Room<any, any>> = ReturnType<R['store']>['state']
+
+export type ActionResult<State extends Record<string, unknown> = Record<string, unknown>> = {
+  state: State;
+  error: ActionRaisedErrorInit | null;
+}
 
 export type UnwrapRoomActions<
   R extends Room<any, any>,
   Functions extends Record<string, (...args: unknown[]) => void> = ReturnType<R['store']>['actions'],
   State extends Record<string, unknown> = ReturnType<R['store']>['state']
 > = {
-  [FunctionName in keyof Functions]: (...args: Parameters<Functions[FunctionName]>) => Promise<State>
+  [FunctionName in keyof Functions]: (...args: Parameters<Functions[FunctionName]>) => Promise<ActionResult<State>>
 }
 
-type ActionDonePayload = {
+export type ActionDonePayload = {
   id: string;
-  state: object;
+  state: Record<string, unknown>;
 }
 
 export function createClient<
@@ -59,73 +65,17 @@ export function createClient<
   })
 }
 
-type UseStoreReturn<CS extends ClientStore<any>> = {
-  state: ReturnType<CS['getState']> extends Promise<infer T> ? T : never;
-  actions: CS['actions'];
-};
+const stores: Record<string, Record<string, ClientStore<any>>> = {}
 
-export function createReactClient<
-  Rooms extends Record<string, Room<any, any>>,
-  T extends {
-    [K in keyof Rooms]: {
-      useStore: (id: string) => UseStoreReturn<ClientStore<Rooms[K]>>
-    }
-  } = {
-    [K in keyof Rooms]: {
-      useStore: (id: string) => UseStoreReturn<ClientStore<Rooms[K]>>
-    }
-  }
->(url: string) {
-  const socket = io(url);
-  const stores: Record<string, Record<string, ClientStore<any>>> = {}
+export function createClientStore(socket: Socket, roomType: string, id: string) {
+  stores[roomType] ||= {};
+  if (stores[roomType][id]) return stores[roomType][id];
 
-  return new Proxy<T>({} as any, {
-    set(): boolean {
-      throw new Error('[Lively Client] You cannot modify actions on a client.');
-    },
-    get(_target, roomType: string) {
-      return {
-        useStore: (id: string) => {
-          stores[roomType] ||= {};
-          const store = stores[roomType][id] ||= createClientStore(socket, roomType, id);
-
-          const trackedProperties = useRef<string[]>([]);
-          const state = useRef<Record<string, any>>({});
-          const [, setR] = useState(0);
-          const forceUpdate = () => setR(c => c + 1);
-
-          useEffect(() => {
-            return store.subscribe(newState => {
-              const tracked = cleanupTrackedProperties(trackedProperties.current);
-              const rerender = trackedObjectChanged(state.current, newState, tracked);
-
-              state.current = newState;
-
-              if (rerender) forceUpdate();
-            });
-          }, []);
-
-          const stateProxy = useMemo(() => createTrackedObjectProxy(state.current, path => {
-            if (trackedProperties.current.includes(path)) return;
-
-            trackedProperties.current.push(path);
-          }), [state.current]);
-
-          return {
-            state: stateProxy,
-            actions: store.actions
-          }
-        }
-      }
-    }
-  })
-}
-
-function createClientStore(socket: Socket, roomType: string, id: string) {
-  let state: object | null = null;
+  let state: Record<string, unknown> | null = null;
 
   const subscribers: ((state: object) => void)[] = [];
-  const actionResolvers: Record<string, (value: unknown) => void> = {};
+  const actionResolvers: Record<string, (value: ActionResult) => void> = {};
+  const actionRejectors: Record<string, (value: unknown) => void> = {};
   const pendingGetStateCallbacks: ((state: object) => void)[] = [];
   const notifySubscribers = () => subscribers.forEach(cb => {
     if (!state) return;
@@ -146,13 +96,41 @@ function createClientStore(socket: Socket, roomType: string, id: string) {
 
   socket.on('actionDone', (result: ActionDonePayload) => {
     state = result.state;
+
+    if (!state) {
+      console.error('[Live.ts] Received null state', result);
+      return;
+    }
+
     notifySubscribers();
 
-    actionResolvers[result.id]?.(state);
+    actionResolvers[result.id]?.({ state, error: null });
+
     delete actionResolvers[result.id];
   });
 
-  return {
+  socket.on('actionFailed', (result: ActionFailedPayload) => {
+    // TODO: seems unnecessary
+    if (!state) {
+      console.error('[Live.ts] Received null state', result);
+      return;
+    }
+
+    actionResolvers[result.id]?.({ state, error: result.error });
+
+    delete actionResolvers[result.id];
+  });
+
+  const store = {
+    get hasSubscribers() {
+      return subscribers.length === 0;
+    },
+    disconnect: () => {
+      socket.off(`${roomType}#${id}/update`);
+      socket.emit('leaveRoom', { type: roomType, id });
+
+      delete stores[roomType][id];
+    },
     subscribe: (cb: (state: object) => void) => {
       subscribers.push(cb);
 
@@ -178,8 +156,9 @@ function createClientStore(socket: Socket, roomType: string, id: string) {
         return (...args: any[]) => {
           const actionId = v4();
 
-          return new Promise(resolve => {
+          return new Promise((resolve, reject) => {
             actionResolvers[actionId] = resolve;
+            actionRejectors[actionId] = reject;
 
             socket.emit('action', {
               id: actionId,
@@ -192,39 +171,8 @@ function createClientStore(socket: Socket, roomType: string, id: string) {
       }
     })
   }
-}
 
-/**
- * Creates a new array of properties with parent objects removed if their child properties are tracked.
- *
- * For example, given an array of `['obj', 'obj.child', 'other', 'obj.child.grandChild']`, it will clean it up to:
- * `['other', 'obj.child.grandChild']`
- */
-function cleanupTrackedProperties(props: string[]) {
-  const isParentProperty: Record<string, boolean> = {};
-  const finalProps: string[] = [];
+  stores[roomType][id] = store;
 
-  // Mark all properties and their parent properties
-  props.forEach(prop => {
-    isParentProperty[prop] = false;
-
-    let current = '';
-
-    prop.split('.').forEach(part => {
-      current = current ? current + '.' + part : part;
-
-      if (current !== prop) {
-        isParentProperty[current] = true;
-      }
-    });
-  });
-
-  // Add to final array only if not a parent property
-  props.forEach(prop => {
-    if (!isParentProperty[prop]) {
-      finalProps.push(prop);
-    }
-  });
-
-  return finalProps;
+  return store;
 }

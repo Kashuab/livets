@@ -1,12 +1,13 @@
 import { createServer as createHTTPServer } from "http";
 import { Server } from "socket.io";
 import {Room} from "./createRoom";
-import {Orchestrator} from "./Orchestrator";
+import {Middleware, Orchestrator} from "./Orchestrator";
 
 type CreateServerOpts<Rooms extends Record<string, Room<any, any>>> = {
   port: number;
   wss: boolean;
   rooms: Rooms;
+  middleware?: Middleware[];
 }
 
 export function createServer<Rooms extends Record<string, Room<any, any>>>(opts: CreateServerOpts<Rooms>) {
@@ -20,13 +21,20 @@ export function createServer<Rooms extends Record<string, Room<any, any>>>(opts:
     }
   });
 
-  const orchestrator = new Orchestrator(io, opts.rooms);
+  const orchestrator = new Orchestrator(io, opts.rooms, opts.middleware);
 
   io.on("connection", (socket) => {
     orchestrator.handleSocketConnect(socket);
   });
 
   httpServer.listen(opts.port);
+
+  orchestrator.execMiddleware('serverCreated', {
+    io,
+    http: httpServer,
+    rooms: opts.rooms,
+    orchestrator
+  });
 
   return opts.rooms;
 }

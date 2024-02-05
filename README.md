@@ -81,7 +81,7 @@ function SomeComponent() {
       ))}
 
       <textarea value={message} onChange={e => setMessage(e.target.value)} />
-      <button onClick={() => actions.messageCreate({content})}>Send</button>
+      <button onClick={() => actions.messageCreate({ content })}>Send</button>
     </div>
   );
 }
@@ -99,38 +99,39 @@ import { createClient } from "live.ts";
 import type { Server } from "~/path/to/server";
 
 const client = createClient<Server>('ws://localhost:3000');
+const threadStore = client.thread.getStore('<thread id>');
 
-const state = await client.getState();
+// Actions return a `ActionResult`, including the latest state
+const { state } = await threadStore.actions.messageCreate({ content: 'Test message' });
 
-// Actions always return the latest state
-const newState = await state.actions.messageCreate({ content: 'Test message' });
-
-console.log(newState) // -> { messages: [{ content: 'Test message' }] }
+console.log(state) // -> { messages: [{ content: 'Test message' }] }
 ```
 
 ## TODO: Error handling
 
 ### Server-side
 
-`Live.ts` exports a special `InputError` class that are handled more conveniently on the client.
-If you need to raise an exception, we recommend throwing your own custom error. You can import them and `try/catch`
-on the client when firing an action.
+In the function provided to `createStore`, the second argument contains a variety of tools at your
+disposal. This includes a way to raise an error that you can handle on the front-end.
 
 ```ts
 // In a separate file to avoid importing server code
 export enum Error {
-  UnexpectedError
+  UnexpectedError,
+  EmptyMessageContent
 }
 
 const threadStore = createStore((state: ThreadState, ctx) => ({
   messageCreate: (message: Message) => {
     if (message.content.length === 0) {
-      ctx.raiseInputError('message content must not be empty');
+      // TODO: This could be confusing. ctx.raise actually throws an error,
+      // so the following return statement is unnecessary. It's not clear, though.
+      ctx.raise(Error.EmptyMessageContent, 'message content must not be empty');
       return;
     }
 
     if (1 + 1 > 2) {
-      ctx.raiseException(Error.UnexpectedError, 'optional message');
+      ctx.raise(Error.UnexpectedError, 'optional message');
       return;
     }
 
@@ -143,9 +144,31 @@ const threadStore = createStore((state: ThreadState, ctx) => ({
 
 ### Client-side
 
+#### Standalone
+
+```ts
+import { createClient } from "live.ts";
+import type { Server } from "~/path/to/server";
+import { Error } from "~/path/to/server/errors";
+
+const client = createClient<Server>('ws://localhost:3000');
+const threadStore = client.thread.getStore('<thread id>');
+
+// The `ActionResult` type also contains an `error` property
+const { error, state } = await threadStore.actions.messageCreate({ content: 'Error me out dude' })
+
+if (error && error.code === Error.UnexpectedError) {
+  // uh-oh!
+}
+```
+
+#### React
+
+`live.ts` exports a `useAction` hook for encapsulating error handling
+
 ```tsx
 import { useState } from "react";
-import { createReactClient } from "live.ts";
+import { createReactClient, useAction } from "live.ts";
 import type { Server } from "~/path/to/server";
 import { Error } from "~/path/to/server/errors";
 
@@ -153,17 +176,15 @@ const client = createReactClient<Server>('ws://localhost:3000');
 
 function SomeComponent() {
   const { state, actions } = client.thread.useStore('<thread-id>');
-
-  const { messages } = state;
-  const { messageCreate } = actions;
+  const messageCreate = useAction(actions.messageCreate);
 
   const [message, setMessage] = useState('');
-
+  
   return (
     <div>
       <h1>Messages</h1>
 
-      {messages.map(message => (
+      {state.messages.map(message => (
         <p>{message.content}</p>
       ))}
 
@@ -172,19 +193,20 @@ function SomeComponent() {
         onChange={e => setMessage(e.target.value)}
       />
 
-      {messageCreate.inputErrors && (
-        <p>{messageCreate.inputErrors.join('\n')}</p>
+      {messageCreate.inputError && (
+        <p>{messageCreate.inputError.join('\n')}</p>
       )}
 
       <button
         onClick={async () => {
-          try {
-            await messageCreate({ content });
-          } catch (err) {
-            if (err.code === Error.UnexpectedError) {
-              // uh-oh!
-            }
+          const { error, state } = await messageCreate.dispatch({ content });
+          
+          if (error && error.code === Error.UnexpectedError) {
+            // uh-oh!
+            console.error('Bad!', error)
           }
+
+          console.log('New state:', state);
         }}
       >
         Send

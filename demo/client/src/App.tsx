@@ -1,7 +1,8 @@
 import './App.css';
-import {createReactClient} from "../../../lib/createClient.ts";
+import {createReactClient} from "../../../lib/createReactClient.ts";
 import type { Server } from "../../server";
 import {memo, useState} from "react";
+import {ThreadError} from "../../server/errors.ts";
 
 const client = createReactClient<Server>('ws://localhost:3000');
 
@@ -16,7 +17,14 @@ function App() {
       <input value={input} onChange={e => setInput(e.target.value)} />
       <button
         onClick={async () => {
-          await actions.setUsername(input);
+          const { error, state } = await actions.setUsername(input);
+          console.log('Set username:', state)
+
+          if (error?.code === ThreadError.BadUsername) {
+            alert(error.message);
+
+            return;
+          }
         }}
       >
         Update username

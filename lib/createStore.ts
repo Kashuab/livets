@@ -1,9 +1,15 @@
+import {ActionRaisedError} from "./ActionRaisedError";
+
+type CreateStoreFnsContext = {
+  raise: (code: string | number, message?: string) => void;
+}
+
 type CreateStoreFns<
   State extends Record<string, unknown>,
   Actions extends {
     [key in string]: (...args: any[]) => void;
   }
-> = (state: State) => Actions
+> = (state: State, ctx: CreateStoreFnsContext) => Actions
 
 type Subscriber<State extends Record<string, unknown>> = (state: State) => void;
 
@@ -35,18 +41,26 @@ export function createStore<
 
     const notifySubscribers = () => subscribers.forEach(cb => cb(state));
 
-    const wrappedFunctions: Actions = (Object.keys(createStoreFns(state)) as (keyof Actions)[])
+    // TODO: empty context object, not required at this point since the functions aren't being called.
+    // We just need to know the function names.
+    const wrappedFunctions: Actions = (Object.keys(createStoreFns(state, {} as any)) as (keyof Actions)[])
       .reduce((wrapped: Actions, functionName) => {
+        const context: CreateStoreFnsContext = {
+          raise: (code, message) => {
+            throw new ActionRaisedError({ code, message });
+          }
+        }
+
         wrapped[functionName] = ((...args: any[]) => {
           if (!state) {
-            throw new Error('[Lively] Failed to create action because state is null, check your getInitialState');
+            throw new Error('[Live.ts] Failed to create action because state is null, check your getInitialState');
           }
 
-          const newFunc = createStoreFns(state)[functionName];
+          const newFunc = createStoreFns(state, context)[functionName];
           const result = newFunc(...args);
 
           // @ts-ignore: result is typed to be void, but this is helpful for developers
-          if (result) throw new Error("[Lively] Actions shouldn't return data, it will be ignored");
+          if (result) throw new Error("[Live.ts] Actions shouldn't return data, it will be ignored");
 
           notifySubscribers();
         }) as any; // TODO: Types
