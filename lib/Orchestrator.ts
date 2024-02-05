@@ -58,6 +58,8 @@ export class Orchestrator {
       throw new Error(`[Lively] Missing action "${data.name}" in room "${data.room.type}" store`);
     }
 
+    // Ignore beforeAction async, don't want things like analytics to hold up action evaluation
+    // ... TODO: is this actually desirable? :thinking_face:
     this.execMiddleware('beforeAction', { action: data, state: room.state });
 
     console.log('Executing', this.getRoomId(data.room.type, data.room.id), data);
@@ -66,12 +68,20 @@ export class Orchestrator {
       await action(...data.args);
     } catch (err) {
       if (err instanceof ActionRaisedError) {
-        console.log('Action failed', err.init);
+        console.log('Action failed', err);
 
-        const payload: ActionFailedPayload = { id: data.id, error: err.init }
+        const payload: ActionFailedPayload = { id: data.id, error: { code: err.code, message: err.message } }
         socket?.emit('actionFailed', payload);
 
-        this.execMiddleware('afterActionFailed', { action: data, state: room.state, error: err.init });
+        await this.execMiddleware('afterActionFailed', {
+          action: data,
+          state: room.state,
+          error: {
+            code: err.code,
+            message: err.message
+          }
+        });
+
         return;
       }
     }
@@ -79,7 +89,7 @@ export class Orchestrator {
     // This could happen before/after state update is emitted
     socket?.emit(`actionDone`, { id: data.id, state: room.state });
 
-    this.execMiddleware('afterAction', { action: data, state: room.state });
+    await this.execMiddleware('afterAction', { action: data, state: room.state });
   }
 
   async handleJoinRoom(socket: Socket, type: string, id: string) {

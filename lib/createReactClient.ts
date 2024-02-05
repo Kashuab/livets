@@ -50,8 +50,6 @@ export function createReactClient<
 
             return () => {
               unsub();
-
-              if (!store.hasSubscribers) store.disconnect();
             }
           }, []);
 

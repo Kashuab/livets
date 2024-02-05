@@ -12,7 +12,9 @@ type StateTest = {
 }
 
 export const lobbyStore = createStore((state: StateTest, ctx) => ({
-  setUsername(username: string) {
+  async setUsername(username: string) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     if (username === 'asdf') {
       ctx.raise(ThreadError.BadUsername, 'username cannot be asdf');
     }

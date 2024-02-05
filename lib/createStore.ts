@@ -51,13 +51,13 @@ export function createStore<
           }
         }
 
-        wrapped[functionName] = ((...args: any[]) => {
+        wrapped[functionName] = (async (...args: any[]) => {
           if (!state) {
             throw new Error('[Live.ts] Failed to create action because state is null, check your getInitialState');
           }
 
           const newFunc = createStoreFns(state, context)[functionName];
-          const result = newFunc(...args);
+          const result = await newFunc(...args);
 
           // @ts-ignore: result is typed to be void, but this is helpful for developers
           if (result) throw new Error("[Live.ts] Actions shouldn't return data, it will be ignored");

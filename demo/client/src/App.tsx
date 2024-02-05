@@ -17,8 +17,14 @@ function App() {
       <input value={input} onChange={e => setInput(e.target.value)} />
       <button
         onClick={async () => {
-          const { error, state } = await actions.setUsername(input);
-          console.log('Set username:', state)
+          const { error, state } = await actions.setUsername.propose(
+            state => {
+              state.username = input
+            },
+            input
+          );
+
+          console.log('Set username result:', state)
 
           if (error?.code === ThreadError.BadUsername) {
             alert(error.message);

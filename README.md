@@ -10,6 +10,8 @@ Type-safe real-time state management built on top of Socket.IO
 
 ## Setup
 
+(This isn't on NPM just yet, documentation is here for design purposes.)
+
 `yarn add live.ts`
 
 ### Server-side
@@ -107,7 +109,7 @@ const { state } = await threadStore.actions.messageCreate({ content: 'Test messa
 console.log(state) // -> { messages: [{ content: 'Test message' }] }
 ```
 
-## TODO: Error handling
+## Error handling
 
 ### Server-side
 
@@ -164,8 +166,6 @@ if (error && error.code === Error.UnexpectedError) {
 
 #### React
 
-`live.ts` exports a `useAction` hook for encapsulating error handling
-
 ```tsx
 import { useState } from "react";
 import { createReactClient, useAction } from "live.ts";
@@ -176,7 +176,6 @@ const client = createReactClient<Server>('ws://localhost:3000');
 
 function SomeComponent() {
   const { state, actions } = client.thread.useStore('<thread-id>');
-  const messageCreate = useAction(actions.messageCreate);
 
   const [message, setMessage] = useState('');
   
@@ -216,13 +215,13 @@ function SomeComponent() {
 }
 ```
 
-## TODO: Optimistic updates
+## Optimistic updates
 
-> Implement error handling before this.
+Use the `propose` function found within an action function. Provide a callback containing store mutations, followed by
+the action's arguments.
 
-Use the `propose` function found within a store. The first argument is a function containing actions,
-the second argument is a function containing state mutations that will be reverted if the actions contain input errors
-or otherwise.
+> Note: This might change. I'm not a fan of how you have to provide the state proposal
+> before the action arguments
 
 ```tsx
 import { useState } from "react";
@@ -232,21 +231,17 @@ import type { Server } from "~/path/to/server";
 const client = createReactClient<Server>('ws://localhost:3000');
 
 function SomeComponent() {
-  const { state, actions, propose } = client.thread.useStore('<thread-id>');
+  const { state, actions } = client.thread.useStore('<thread-id>');
   const { messageCreate } = actions;
   const { messages } = state;
 
   const [message, setMessage] = useState('');
 
   const handleSendClick = async () => {
-    await propose(
-      async () => {
-        await actions.messageCreate({ content })
-      },
-      state => {
-        state.messages.push({ content });
-      }
-    )
+    await actions.messageCreate.propose(
+      state => state.messages.push({ content }),
+      { content }
+    );
   }
 
   return (
@@ -264,19 +259,14 @@ function SomeComponent() {
 }
 ```
 
-
 # TODO:
 
-1. Re-sync state upon window focus
+1. Efforts to prevent de-sync (poll server for state via hash/timestamp, sync on window focus, etc)
 2. More robust config for `createServer`
-3. Reconcile names (`createStore`, `createRoom`, etc. are kind of confusing)
-4. Implement error handling
-  - Exceptions (i.e. `throw new Error("this shouldn't happen")`)
-  - User input errors (i.e. `username already taken`)
-5. Implement action wrappers (authentication, context, etc.)
-6. Better documentation
-7. Tests
-8. Optimitistic state updates
+3. Reconcile names (`createStore`, `createRoom`, etc. are confusing)
+4. Implement action wrappers (authentication, context, etc.)
+5. Better documentation
+6. Tests (there are some, need more coverage)
 
 # Philosophy
 

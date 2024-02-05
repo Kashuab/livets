@@ -2,7 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import type { Room } from "./createRoom";
 import { v4 } from 'uuid';
 import {ActionFailedPayload} from "./Orchestrator";
-import {ActionRaisedError, ActionRaisedErrorInit} from "./ActionRaisedError";
+import {ActionRaisedErrorInit} from "./ActionRaisedError";
 
 export type ClientStore<
   R extends Room<any, any>,
@@ -27,7 +27,9 @@ export type UnwrapRoomActions<
   Functions extends Record<string, (...args: unknown[]) => void> = ReturnType<R['store']>['actions'],
   State extends Record<string, unknown> = ReturnType<R['store']>['state']
 > = {
-  [FunctionName in keyof Functions]: (...args: Parameters<Functions[FunctionName]>) => Promise<ActionResult<State>>
+  [FunctionName in keyof Functions]: ((...args: Parameters<Functions[FunctionName]>) => Promise<ActionResult<State>>) & {
+    propose: (updateState: (state: State) => void, ...args: Parameters<Functions[FunctionName]>) => Promise<ActionResult<State>>
+  }
 }
 
 export type ActionDonePayload = {
@@ -75,13 +77,16 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
 
   const subscribers: ((state: object) => void)[] = [];
   const actionResolvers: Record<string, (value: ActionResult) => void> = {};
-  const actionRejectors: Record<string, (value: unknown) => void> = {};
   const pendingGetStateCallbacks: ((state: object) => void)[] = [];
-  const notifySubscribers = () => subscribers.forEach(cb => {
-    if (!state) return;
+  const notifySubscribers = () => {
+    subscribers.forEach(cb => {
+      if (!state) {
+        return;
+      }
 
-    cb(state)
-  });
+      cb(state)
+    });
+  }
 
   socket.emit('joinRoom', { type: roomType, id });
   socket.on(`${roomType}#${id}/update`, newState => {
@@ -128,8 +133,6 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
     disconnect: () => {
       socket.off(`${roomType}#${id}/update`);
       socket.emit('leaveRoom', { type: roomType, id });
-
-      delete stores[roomType][id];
     },
     subscribe: (cb: (state: object) => void) => {
       subscribers.push(cb);
@@ -153,12 +156,11 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
         throw new Error('[Lively Client] You cannot modify actions on a store.');
       },
       get(_target, actionName) {
-        return (...args: any[]) => {
+        const fn = (...args: any[]) => {
           const actionId = v4();
 
-          return new Promise((resolve, reject) => {
+          return new Promise<ActionResult>(resolve => {
             actionResolvers[actionId] = resolve;
-            actionRejectors[actionId] = reject;
 
             socket.emit('action', {
               id: actionId,
@@ -168,6 +170,32 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
             });
           })
         }
+
+        fn.propose = async (updateState: (state: Record<string, unknown>) => void, ...args: any[]) => {
+          if (!state) throw new Error('[Live.ts] TODO: Propose called too early');
+
+          // TODO: Snapshot performance
+          // This is significantly faster than structuredClone. We should use proxies here to track changes
+          // and restore them instead, but I don't care that much right now
+          const before = state;
+          const copy = JSON.parse(JSON.stringify(state));
+
+          updateState(copy);
+          state = copy;
+          notifySubscribers();
+
+          const result = await fn(...args);
+
+          // Rollback if the action bailed
+          if (result.error) {
+            state = before;
+            notifySubscribers();
+          }
+
+          return result;
+        }
+
+        return fn;
       }
     })
   }
