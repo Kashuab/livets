@@ -192,13 +192,9 @@ function SomeComponent() {
         onChange={e => setMessage(e.target.value)}
       />
 
-      {messageCreate.inputError && (
-        <p>{messageCreate.inputError.join('\n')}</p>
-      )}
-
       <button
         onClick={async () => {
-          const { error, state } = await messageCreate.dispatch({ content });
+          const { error, state } = await actions.messageCreate({ content });
           
           if (error && error.code === Error.UnexpectedError) {
             // uh-oh!
@@ -259,14 +255,53 @@ function SomeComponent() {
 }
 ```
 
+## TODO: Cache adapters
+
+By default, `live.ts` keeps all stores in-memory. At scale you might consider using `redis` to add a layer of redundancy.
+
+```ts
+import { createStore, createRoom, createServer, redisCacheAdapter } from 'live.ts';
+
+// ... createStore, etc
+
+const thread = createRoom({
+  store: threadStore,
+  cacheAdapter: redisCacheAdapter({ url: '...' }),
+  getInitialState: async (id) => {
+    // If the thread exists in redis, the cache adapter will handle it.
+    // So if this function is called, you need to fetch the thread from your database.
+    
+    // ... or, return some defaults.
+    return { messages: [] }
+  },
+  persist: async (id, state) => {
+    // This is ran after an action is processed.
+    // This may not be needed in all cases.
+  }
+});
+
+// ... createServer, etc
+
+```
+
+
 # TODO:
 
-1. Efforts to prevent de-sync (poll server for state via hash/timestamp, sync on window focus, etc)
-2. More robust config for `createServer`
-3. Reconcile names (`createStore`, `createRoom`, etc. are confusing)
-4. Implement action wrappers (authentication, context, etc.)
-5. Better documentation
-6. Tests (there are some, need more coverage)
+1. Persistence layer adapters (cache, db)
+
+Other cache methods are needed for redundancy in case the server dies and/or memory is restricted. Currently, stores
+are stored in memory which is impractical at scale.
+
+DB storage is also interesting, I question whether or not actions are the correct place to put database operations.
+For the sake of performance, I'd say cache _should_ be the source of truth, and the database serves as async storage
+when a given room is empty and its resources are vacated from the cache.
+
+2. Efforts to prevent de-sync (poll server for state via hash/timestamp, sync on window focus, etc)
+3. More robust config for `createServer`
+4. Reconcile names (`createStore`, `createRoom`, etc. are confusing)
+5. Action utils (authentication, context, etc.)
+6. Better documentation, guides, examples
+7. Tests (there are some, need more coverage)
 
 # Philosophy
 
