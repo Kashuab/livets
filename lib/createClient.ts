@@ -54,7 +54,7 @@ export function createClient<
 
   return new Proxy<T>({} as any, {
     set(): boolean {
-      throw new Error('[Lively Client] You cannot modify actions on a client.');
+      throw new Error('[Live.ts Client] You cannot modify actions on a client.');
     },
     get(_target, roomType: string) {
       return {
@@ -91,7 +91,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
   socket.emit('joinRoom', { type: roomType, id });
   socket.on(`${roomType}#${id}/update`, newState => {
     state = newState;
-    if (!state) throw new Error('[Lively Client] Received null state');
+    if (!state) throw new Error('[Live.ts Client] Received null state');
 
     notifySubscribers();
 
@@ -153,7 +153,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
     },
     actions: new Proxy({}, {
       set(): boolean {
-        throw new Error('[Lively Client] You cannot modify actions on a store.');
+        throw new Error('[Live.ts Client] You cannot modify actions on a store.');
       },
       get(_target, actionName) {
         const fn = (...args: any[]) => {

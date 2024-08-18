@@ -1,16 +1,33 @@
 {
-  "name": "lively",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "live.ts",
+  "type": "module",
+  "version": "0.1.0",
+  "exports": {
+    "./client": "./dist/client/index.js",
+    "./server": "./dist/server/index.js"
+  },
+  "main": "./dist/server/index.js",
+  "module": "./dist/client/index.js",
+  "types": "./dist/index.d.ts",
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
   "scripts": {
     "demo-server-dev": "ts-node --transpileOnly --project demo/server/tsconfig.json demo/server/index.ts",
-    "test": "vitest"
+    "test": "vitest",
+    "build": "yarn build-server; yarn build-client",
+    "build-server": "microbundle --no-compress --entry ./server.ts -o dist/server --target node --format modern --external socket.io,express",
+    "build-client": "microbundle --no-compress --entry ./client.ts -o dist/client --target web --format modern --external uuid,socket.io-client,react"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/mime-types": "^2.1.4",
+    "@types/react": "^18.2.45",
+    "@types/uuid": "^9.0.7",
+    "microbundle": "^0.15.1",
+    "tsconfig-paths": "^4.2.0",
+    "vitest": "^1.2.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "mime-types": "^2.1.35",
@@ -21,13 +38,5 @@
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3",
     "uuid": "^9.0.1"
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/mime-types": "^2.1.4",
-    "@types/react": "^18.2.45",
-    "@types/uuid": "^9.0.7",
-    "tsconfig-paths": "^4.2.0",
-    "vitest": "^1.2.0"
   }
 }
