@@ -3,7 +3,8 @@ import type { Room } from "./createRoom";
 import {useEffect, useState, useRef, useMemo} from "react";
 import {createTrackedObjectProxy} from "./util/createTrackedObjectProxy";
 import {trackedObjectChanged} from "./util/trackedObjectChanged";
-import {ClientStore, createClientStore} from "./createClient";
+import {ClientStore, CreateClientOpts, createClientStore} from "./createClient";
+import { ServerTypes } from './createServer';
 
 type UseStoreReturn<CS extends ClientStore<any>> = {
   state: ReturnType<CS['getState']> extends Promise<infer T> ? T : never;
@@ -11,7 +12,9 @@ type UseStoreReturn<CS extends ClientStore<any>> = {
 };
 
 export function createReactClient<
-  Rooms extends Record<string, Room<any, any>>,
+  Server extends ServerTypes<any, any>,
+  Rooms extends Record<string, Room<any, any, any, any>> = Server['rooms'],
+  Actor extends Record<string, unknown> = Server['actor'],
   T extends {
     [K in keyof Rooms]: {
       useStore: (id: string) => UseStoreReturn<ClientStore<Rooms[K]>>
@@ -21,17 +24,17 @@ export function createReactClient<
       useStore: (id: string) => UseStoreReturn<ClientStore<Rooms[K]>>
     }
   }
->(url: string) {
+>(url: string, opts: CreateClientOpts<Actor>) {
   const socket = io(url);
 
   return new Proxy<T>({} as any, {
     set(): boolean {
-      throw new Error('[Lively Client] You cannot modify actions on a client.');
+      throw new Error('[Live.ts Client] You cannot modify actions on a client.');
     },
     get(_target, roomType: string) {
       return {
         useStore: (id: string) => {
-          const store = createClientStore(socket, roomType, id);
+          const store = createClientStore({ socket, roomType, id, ...opts });
 
           const trackedProperties = useRef<string[]>([]);
           const state = useRef<Record<string, any>>({});

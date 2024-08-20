@@ -1,9 +1,9 @@
 import {ActionData, Middleware} from "../Orchestrator";
-import fs from 'fs';
+import * as fs from 'fs';
 import { resolve } from 'path'
-import mime from 'mime-types';
-import express from 'express';
-import cors from 'cors';
+import * as mime from 'mime-types';
+import * as express from 'express';
+import * as cors from 'cors';
 
 export type DevtoolsStats = {
   rooms: {
@@ -12,7 +12,7 @@ export type DevtoolsStats = {
   }[];
 
   activeRooms: Record<string, Record<string, {
-    timeline: { action: ActionData; stateBefore: object; stateAfter: object; }[];
+    timeline: { action: ActionData<any>; stateBefore: object; stateAfter: object; }[];
   }>>
 }
 
@@ -21,7 +21,7 @@ let stats: DevtoolsStats = {
   activeRooms: {}
 }
 
-export const devtools: Middleware = {
+export const devtools: Middleware<any, any> = {
   serverCreated: stuff => {
     stats.rooms = Object.entries(stuff.rooms).map(([name, room]) => ({
       name,

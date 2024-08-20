@@ -5,7 +5,7 @@ import {ActionFailedPayload} from "./Orchestrator";
 import {ActionRaisedErrorInit} from "./ActionRaisedError";
 
 export type ClientStore<
-  R extends Room<any, any>,
+  R extends Room<any, any, any, any>,
   State extends Record<string, any> = UnwrapRoomState<R>,
 > = {
   disconnect: () => void;
@@ -15,7 +15,11 @@ export type ClientStore<
   hasSubscribers: boolean;
 }
 
-export type UnwrapRoomState<R extends Room<any, any>> = ReturnType<R['store']>['state']
+export type UnwrapRoomState<R extends Room<any, any, any, any>> = R['transformClientState'] extends (...args: any) => infer ClientState
+  ? ClientState extends Record<string, unknown>
+    ? ClientState
+    : never
+  : ReturnType<R['store']>['state']
 
 export type ActionResult<State extends Record<string, unknown> = Record<string, unknown>> = {
   state: State;
@@ -23,7 +27,7 @@ export type ActionResult<State extends Record<string, unknown> = Record<string, 
 }
 
 export type UnwrapRoomActions<
-  R extends Room<any, any>,
+  R extends Room<any, any, any, any>,
   Functions extends Record<string, (...args: unknown[]) => void> = ReturnType<R['store']>['actions'],
   State extends Record<string, unknown> = ReturnType<R['store']>['state']
 > = {
@@ -37,8 +41,13 @@ export type ActionDonePayload = {
   state: Record<string, unknown>;
 }
 
+export type CreateClientOpts<Actor extends Record<string, unknown>> = {
+  actor: () => Actor
+}
+
 export function createClient<
-  Rooms extends Record<string, Room<any, any>>,
+  Rooms extends Record<string, Room<any, any, any, any>>,
+  Actor extends Record<string, unknown>,
   T extends {
     [K in keyof Rooms]: {
       getStore: (id: string) => ClientStore<Rooms[K]>
@@ -48,8 +57,11 @@ export function createClient<
       getStore: (id: string) => ClientStore<Rooms[K]>
     }
   }
->(url: string) {
-  const socket = io(url);
+>(url: string, opts: CreateClientOpts<Actor>) {
+  const socket = io(url, {
+    auth: opts.actor()
+  });
+  
   const stores: Record<string, Record<string, ClientStore<any>>> = {}
 
   return new Proxy<T>({} as any, {
@@ -60,7 +72,7 @@ export function createClient<
       return {
         getStore: (id: string) => {
           stores[roomType] ||= {};
-          return stores[roomType][id] ||= createClientStore(socket, roomType, id);
+          return stores[roomType][id] ||= createClientStore({ actor: opts.actor, socket, roomType, id });
         }
       }
     }
@@ -69,7 +81,16 @@ export function createClient<
 
 const stores: Record<string, Record<string, ClientStore<any>>> = {}
 
-export function createClientStore(socket: Socket, roomType: string, id: string) {
+export type CreateClientStoreOpts<Actor extends Record<string, unknown>> = {
+  socket: Socket;
+  roomType: string;
+  id: string;
+  actor: () => Actor
+}
+
+export function createClientStore<Actor extends Record<string, unknown>>(opts: CreateClientStoreOpts<Actor>) {
+  const { roomType, id, socket } = opts;
+
   stores[roomType] ||= {};
   if (stores[roomType][id]) return stores[roomType][id];
 
@@ -88,7 +109,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
     });
   }
 
-  socket.emit('joinRoom', { type: roomType, id });
+  socket.emit('joinRoom', { type: roomType, id, actor: opts.actor() });
   socket.on(`${roomType}#${id}/update`, newState => {
     state = newState;
     if (!state) throw new Error('[Live.ts Client] Received null state');
@@ -103,7 +124,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
     state = result.state;
 
     if (!state) {
-      console.error('[Live.ts] Received null state', result);
+      console.error('[Live.ts Client] Received null state', result);
       return;
     }
 
@@ -117,7 +138,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
   socket.on('actionFailed', (result: ActionFailedPayload) => {
     // TODO: seems unnecessary
     if (!state) {
-      console.error('[Live.ts] Received null state', result);
+      console.error('[Live.ts Client] Received null state', result);
       return;
     }
 
@@ -164,6 +185,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
 
             socket.emit('action', {
               id: actionId,
+              actor: opts.actor(),
               room: { type: roomType, id },
               name: actionName,
               args
@@ -172,7 +194,7 @@ export function createClientStore(socket: Socket, roomType: string, id: string) 
         }
 
         fn.propose = async (updateState: (state: Record<string, unknown>) => void, ...args: any[]) => {
-          if (!state) throw new Error('[Live.ts] TODO: Propose called too early');
+          if (!state) throw new Error('[Live.ts Client] TODO: Propose called too early');
 
           // TODO: Snapshot performance
           // This is significantly faster than structuredClone. We should use proxies here to track changes

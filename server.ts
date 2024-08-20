@@ -3,3 +3,4 @@ export * from './lib/createRoom';
 export * from './lib/createStore';
 export * from './lib/Orchestrator';
 export * from './lib/ActionRaisedError'
+export * from './lib/middleware/devtools';
